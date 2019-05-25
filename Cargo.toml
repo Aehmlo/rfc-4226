@@ -3,6 +3,15 @@ name = "rfc-4226"
 version = "0.1.0"
 authors = ["Alex Hamilton <alex.hamilton@ou.edu>"]
 edition = "2018"
+description = "Implementation of RFC 4226."
+homepage = "https://github.com/Aehmlo/rfc-4226"
+readme = "README.md"
+keywords = ["hotp"]
+categories = ["algorithms", "authentication"]
+license = "MIT OR Apache-2.0"
+
+[badges]
+travis-ci = { repository = "Aehmlo/rfc-4226" }
 
 [dependencies]
 ring = "0.14.6"
