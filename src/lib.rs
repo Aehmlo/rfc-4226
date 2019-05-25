@@ -98,7 +98,7 @@ impl_secret_array_slice!(16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
 
 /// HOTP error type.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Error {
+pub enum HotpError {
     /// The hash calculated internally was incorrectly formed (incorrect length).
     Hash,
     /// The provided secret was smaller than 20 bytes.
@@ -107,13 +107,13 @@ pub enum Error {
     Digits,
 }
 
-impl From<std::array::TryFromSliceError> for Error {
+impl From<std::array::TryFromSliceError> for HotpError {
     fn from(_: std::array::TryFromSliceError) -> Self {
-        Error::Hash
+        HotpError::Hash
     }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, HotpError>;
 
 // "Dynamic truncation" (https://tools.ietf.org/html/rfc4226#section-5.3)
 fn truncate(hs: &[u8]) -> Result<u32> {
@@ -140,7 +140,7 @@ pub fn raw_hotp<S: Secret, C: Counter>(secret: S, counter: C) -> Result<u32> {
     let c = counter.value().to_be_bytes();
     let k: &[u8] = secret.as_ref();
     if k.len() < MIN_SECRET_BYTES {
-        return Err(Error::Secret);
+        return Err(HotpError::Secret);
     }
     let key = SigningKey::new(&SHA1, &k);
     let hs = sign(&key, &c);
@@ -157,9 +157,27 @@ pub fn raw_hotp<S: Secret, C: Counter>(secret: S, counter: C) -> Result<u32> {
 /// [raw_hotp]: fn.raw_hotp.html
 pub fn hotp<S: Secret, C: Counter>(secret: S, counter: C, digits: u8) -> Result<u32> {
     if !(MIN_DIGITS..=MAX_DIGITS).contains(&digits) {
-        return Err(Error::Digits);
+        return Err(HotpError::Digits);
     }
     raw_hotp(secret, counter).map(|x| x % 10_u32.pow(digits.into()))
+}
+
+mod provider {
+    type Throttle = u8; // Throttling parameter (attempts)
+    type Resync = u8; // Resynchronization parameter
+
+    /// Encodes an error encountered while attempting to authenticate with a provider.
+    pub enum Error {
+        /// The retry threshold has been reached.
+        MaximumRetries,
+        /// The given token was of incorrect length.
+        InvalidTokenLength,
+    }
+
+    struct Handle {
+        attempts: u8,
+        remaining: u8,
+    }
 }
 
 #[cfg(test)]
@@ -168,17 +186,17 @@ mod tests {
     #[test]
     fn truncate_19_bytes() {
         let hs = [0; 19];
-        assert_eq!(truncate(&hs), Err(Error::Hash));
+        assert_eq!(truncate(&hs), Err(HotpError::Hash));
     }
     #[test]
     fn truncate_0_bytes() {
         let hs = [];
-        assert_eq!(truncate(&hs), Err(Error::Hash));
+        assert_eq!(truncate(&hs), Err(HotpError::Hash));
     }
     #[test]
     fn truncate_21_bytes() {
         let hs = [0; 21];
-        assert_eq!(truncate(&hs), Err(Error::Hash));
+        assert_eq!(truncate(&hs), Err(HotpError::Hash));
     }
     #[test]
     fn truncate_20_bytes() {
@@ -188,7 +206,7 @@ mod tests {
     #[test]
     fn raw_hotp_short_secret() {
         let secret = "1234"; // Note: b"1234" fails to compile
-        assert_eq!(raw_hotp(secret, 0), Err(Error::Secret));
+        assert_eq!(raw_hotp(secret, 0), Err(HotpError::Secret));
     }
     #[test]
     fn test_raw_hotp() {
